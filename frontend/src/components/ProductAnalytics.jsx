@@ -7,7 +7,7 @@ const ProductAnalytics = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch('http://localhost:8000/api/products-analytics')
+    fetch('api/products-analytics')
       .then(res => res.json())
       .then(data => {
         setAnalytics(data);
