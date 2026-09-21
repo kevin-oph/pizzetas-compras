@@ -26,11 +26,17 @@ export default function AdminPanel() {
       setProviders(provRes.data || []);
       
       const invRes = await axios.get('/api/inventory-catalog');
-      // Aplanamos el catálogo por proveedores en una sola lista de productos para administración
       let allProducts = [];
       Object.entries(invRes.data || {}).forEach(([providerName, items]) => {
         items.forEach(item => {
-          allProducts.push({ ...item, providerName });
+          allProducts.push({ 
+            product_id: item.product_id,
+            name: item.name,
+            ideal_stock: item.ideal_stock,
+            unit_measure: item.unit_measure || item.unit,
+            unit_price: item.unit_price || 0.0,
+            providerName 
+          });
         });
       });
       setProducts(allProducts);
@@ -206,16 +212,17 @@ export default function AdminPanel() {
         </div>
       </div>
 
-      {/* Modal o Sección de Edición si se selecciona un producto */}
+      {/* Sección de Edición */}
       {editingProduct && (
         <div className="bg-amber-50 border border-amber-200 rounded-2xl p-6 shadow-md space-y-4">
           <div className="flex justify-between items-center">
-            <h3 className="text-lg font-bold text-amber-900">✏️ Actualizar Métricas de: {editingProduct.name}</h3>
-            <button onClick={() => setEditingProduct(null)} className="text-xs font-bold text-slate-500 hover:text-red-600 cursor-pointer">✕ Cancelar</button>
+            <h3 className="text-lg font-bold text-amber-900">✏️ Actualizar Producto y Costos: {editingProduct.name}</h3>
+            <button type="button" onClick={() => setEditingProduct(null)} className="text-xs font-bold text-slate-500 hover:text-red-600 cursor-pointer">✕ Cancelar</button>
           </div>
-          <form onSubmit={handleUpdateProduct} className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+          <form onSubmit={handleUpdateProduct} className="grid grid-cols-1 sm:grid-cols-5 gap-3">
             <input 
               type="text" 
+              placeholder="Nombre"
               value={editingProduct.name}
               onChange={(e) => setEditingProduct({...editingProduct, name: e.target.value})}
               className="px-3 py-2 bg-white rounded-xl border border-slate-200 text-sm"
@@ -238,6 +245,15 @@ export default function AdminPanel() {
               className="px-3 py-2 bg-white rounded-xl border border-slate-200 text-sm"
               required
             />
+            <input 
+              type="number" 
+              step="0.01"
+              placeholder="Costo Unitario ($)"
+              value={editingProduct.unit_price}
+              onChange={(e) => setEditingProduct({...editingProduct, unit_price: e.target.value})}
+              className="px-3 py-2 bg-white rounded-xl border border-slate-200 text-sm"
+              required
+            />
             <button type="submit" className="bg-amber-600 hover:bg-amber-700 text-white font-bold py-2 rounded-xl text-sm transition cursor-pointer">
               Guardar Cambios
             </button>
@@ -245,7 +261,7 @@ export default function AdminPanel() {
         </div>
       )}
 
-      {/* Tabla General para Administrar Inventario Existente */}
+      {/* Tabla General */}
       <div className="bg-white rounded-2xl shadow-md border border-slate-100 overflow-hidden">
         <div className="p-6 border-b border-slate-100">
           <h3 className="text-lg font-bold">📋 Listado de Insumos Registrados ({products.length})</h3>
@@ -258,6 +274,7 @@ export default function AdminPanel() {
                 <th className="p-4">Tienda</th>
                 <th className="p-4">Stock Ideal (Máx)</th>
                 <th className="p-4">Unidad</th>
+                <th className="p-4">Costo Unitario</th>
                 <th className="p-4 text-center">Acciones</th>
               </tr>
             </thead>
@@ -267,15 +284,18 @@ export default function AdminPanel() {
                   <td className="p-4 font-bold text-slate-800">{item.name}</td>
                   <td className="p-4"><span className="bg-orange-50 text-orange-700 px-2.5 py-1 rounded-lg text-xs font-semibold">{item.providerName}</span></td>
                   <td className="p-4 font-semibold text-slate-600">{item.ideal_stock}</td>
-                  <td className="p-4 text-slate-500">{item.unit}</td>
+                  <td className="p-4 text-slate-500">{item.unit_measure}</td>
+                  <td className="p-4 font-black text-slate-700">${Number(item.unit_price || 0).toFixed(2)}</td>
                   <td className="p-4 text-center space-x-2">
                     <button 
+                      type="button"
                       onClick={() => setEditingProduct(item)}
                       className="bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer"
                     >
                       ✏️ Editar
                     </button>
                     <button 
+                      type="button"
                       onClick={() => handleDeleteProduct(item.product_id)}
                       className="bg-red-500/10 hover:bg-red-500/20 text-red-600 px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer"
                     >
