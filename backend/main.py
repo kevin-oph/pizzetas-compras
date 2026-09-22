@@ -30,14 +30,10 @@ def get_stock_status(current: float, ideal: float):
         return "Low"
     return "Optimal"
 
-# Esquemas de Pydantic para peticiones POST / PUT
-class StockUpdateItem(BaseModel):
+# Esquemas de Pydantic para peticiones
+class StockConsume(BaseModel):
     product_id: int
-    quantity_to_add: float
-
-class StockUpdate(BaseModel):
-    product_id: int
-    new_stock: float
+    consumed_amount: float
 
 class ProviderCreate(BaseModel):
     name: str
@@ -153,16 +149,44 @@ def get_products_analytics(db: Session = Depends(get_db)):
     }
 
 
-@app.post("/api/update-stock")
-def update_stock(data: StockUpdate, db: Session = Depends(get_db)):
+# --- TRANSACCIONES DE INVENTARIO (CICLO CERRADO) ---
+
+@app.post("/api/consume-stock")
+def consume_stock(data: StockConsume, db: Session = Depends(get_db)):
+    """Salida de inventario por consumo en cocina (Corte Diario). Solo decrementa."""
     product = db.query(models.Product).filter(models.Product.id == data.product_id).first()
     if not product:
         raise HTTPException(status_code=404, detail="Producto no encontrado")
     
-    product.current_stock = data.new_stock
+    current = product.current_stock or 0.0
+    new_stock = max(0.0, current - data.consumed_amount)
+    
+    product.current_stock = new_stock
     db.commit()
-    return {"message": "Stock actualizado correctamente"}
+    return {"message": "Consumo registrado con éxito", "current_stock": new_stock}
 
+
+class ConfirmReceipt(BaseModel):
+    provider_name: str
+
+@app.post("/api/confirm-shopping-receipt")
+def confirm_shopping_receipt(data: ConfirmReceipt, db: Session = Depends(get_db)):
+    """Entrada de inventario por surtido de compras. Reabastece al nivel ideal."""
+    provider = db.query(models.Provider).filter(models.Provider.name == data.provider_name).first()
+    
+    if not provider:
+        raise HTTPException(status_code=404, detail="Proveedor no encontrado")
+        
+    products = db.query(models.Product).filter(models.Product.provider_id == provider.id).all()
+    
+    for product in products:
+        stock = product.current_stock or 0.0
+        ideal = product.ideal_stock or 0.0
+        if stock < ideal:
+            product.current_stock = ideal
+            
+    db.commit()
+    return {"message": f"Recepción de mercancía de {data.provider_name} registrada. Almacén actualizado al nivel ideal."}
 
 @app.get("/api/inventory-catalog")
 def get_inventory_catalog(db: Session = Depends(get_db)):
