@@ -176,15 +176,20 @@ def seed_database():
     db.commit()
 
     # 3. Usuarios de Prueba
+    from auth import hash_password
     admin_user = db.query(models.User).filter_by(username="admin").first()
     if not admin_user:
-        admin_user = models.User(username="admin", hashed_password="123", role="admin")
+        admin_user = models.User(username="admin", hashed_password=hash_password("123"), role="admin")
         db.add(admin_user)
+    else:
+        admin_user.hashed_password = hash_password("123")
 
     operator_user = db.query(models.User).filter_by(username="operario").first()
     if not operator_user:
-        operator_user = models.User(username="operario", hashed_password="123", role="operator")
+        operator_user = models.User(username="operario", hashed_password=hash_password("123"), role="operator")
         db.add(operator_user)
+    else:
+        operator_user.hashed_password = hash_password("123")
 
     db.commit()
     db.refresh(admin_user)

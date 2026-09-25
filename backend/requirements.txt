@@ -6,3 +6,7 @@ pydantic
 openpyxl
 python-multipart
 xlrd
+pyjwt
+passlib[bcrypt]
+bcrypt
+python-dotenv

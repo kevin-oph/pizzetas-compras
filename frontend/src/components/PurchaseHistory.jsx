@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../api/client';
 import { 
   Receipt, 
   Store, 
@@ -27,7 +27,7 @@ export default function PurchaseHistory() {
   const fetchPurchases = async () => {
     setLoading(true);
     try {
-      const res = await axios.get('/api/purchases');
+      const res = await api.get('/api/purchases');
       setPurchases(res.data || []);
     } catch (err) {
       console.error("Error al cargar historial de compras:", err);

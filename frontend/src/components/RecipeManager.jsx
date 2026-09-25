@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../api/client';
 import Swal from 'sweetalert2';
 import { 
   BookOpen, 
@@ -37,8 +37,8 @@ export default function RecipeManager() {
     setLoading(true);
     try {
       const [menuRes, invRes] = await Promise.all([
-        axios.get('/api/menu-items'),
-        axios.get('/api/inventory-catalog')
+        api.get('/api/menu-items'),
+        api.get('/api/inventory-catalog')
       ]);
       setMenuItems(menuRes.data || []);
 
@@ -109,7 +109,7 @@ export default function RecipeManager() {
     if (!editingItem) return;
 
     try {
-      await axios.post('/api/menu-items', {
+      await api.post('/api/menu-items', {
         pos_name: editingItem.pos_name,
         category: editingItem.category,
         sale_price: parseFloat(editingItem.sale_price) || 0.0,

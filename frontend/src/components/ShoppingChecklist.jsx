@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../api/client';
 import Swal from 'sweetalert2';
 import { 
   ShoppingCart, 
@@ -43,7 +43,7 @@ export default function ShoppingChecklist() {
   const fetchShoppingList = async () => {
     setLoading(true);
     try {
-      const res = await axios.get('/api/shopping-list');
+      const res = await api.get('/api/shopping-list');
       const data = res.data || {};
       setShoppingData(data);
 
@@ -182,7 +182,7 @@ export default function ShoppingChecklist() {
         };
       });
 
-      const res = await axios.post('/api/register-purchase', {
+      const res = await api.post('/api/register-purchase', {
         provider_id: currentProviderData.provider_id,
         ticket_number: ticketNumber.trim() || undefined,
         notes: notes.trim() || undefined,

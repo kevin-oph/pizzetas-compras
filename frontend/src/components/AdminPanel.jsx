@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../api/client';
 import Swal from 'sweetalert2';
 import { Settings, PlusCircle, Store, Edit2, Trash2, Search, Filter } from 'lucide-react';
 
@@ -41,10 +41,10 @@ export default function AdminPanel() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const provRes = await axios.get('/api/providers');
+      const provRes = await api.get('/api/providers');
       setProviders(provRes.data || []);
       
-      const invRes = await axios.get('/api/inventory-catalog');
+      const invRes = await api.get('/api/inventory-catalog');
       let allProducts = [];
       Object.entries(invRes.data || {}).forEach(([providerName, items]) => {
         items.forEach(item => {
@@ -82,7 +82,7 @@ export default function AdminPanel() {
     }
 
     try {
-      await axios.post('/api/products', {
+      await api.post('/api/products', {
         name: newName,
         category: newCategory,
         provider_id: parseInt(newProviderId),
@@ -104,7 +104,7 @@ export default function AdminPanel() {
   const handleCreateProvider = async (e) => {
     e.preventDefault();
     try {
-      await axios.post('/api/providers', { name: newProviderName });
+      await api.post('/api/providers', { name: newProviderName });
       Swal.fire({ icon: 'success', title: '¡Tienda Registrada!', confirmButtonColor: '#ea580c' });
       setNewProviderName('');
       fetchData();
@@ -127,7 +127,7 @@ export default function AdminPanel() {
 
     if (result.isConfirmed) {
       try {
-        await axios.delete(`/api/products/${id}`);
+        await api.delete(`/api/products/${id}`);
         Swal.fire('¡Eliminado!', 'El insumo ha sido dado de baja.', 'success');
         fetchData();
       } catch {
@@ -139,7 +139,7 @@ export default function AdminPanel() {
   const handleUpdateProduct = async (e) => {
     e.preventDefault();
     try {
-      await axios.put(`/api/products/${editingProduct.product_id}`, {
+      await api.put(`/api/products/${editingProduct.product_id}`, {
         name: editingProduct.name,
         category: editingProduct.category,
         ideal_stock: parseFloat(editingProduct.ideal_stock),

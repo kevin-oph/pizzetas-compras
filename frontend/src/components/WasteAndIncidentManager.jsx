@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../api/client';
 import Swal from 'sweetalert2';
 import { 
   Trash2, 
@@ -66,8 +66,8 @@ export default function WasteAndIncidentManager({ user }) {
     try {
       setLoading(true);
       const [invRes, logsRes] = await Promise.all([
-        axios.get('/api/inventory-catalog'),
-        axios.get('/api/consumptions?limit=40')
+        api.get('/api/inventory-catalog'),
+        api.get('/api/consumptions?limit=40')
       ]);
 
       // Aplanar lista de productos de todas las tiendas
@@ -132,7 +132,7 @@ export default function WasteAndIncidentManager({ user }) {
         user_id: user?.id || null
       };
 
-      const res = await axios.post('/api/consume-stock', payload);
+      const res = await api.post('/api/consume-stock', payload);
 
       Swal.fire({
         icon: 'success',
@@ -175,7 +175,7 @@ export default function WasteAndIncidentManager({ user }) {
     if (!confirm.isConfirmed) return;
 
     try {
-      await axios.delete(`/api/consumptions/${logId}`);
+      await api.delete(`/api/consumptions/${logId}`);
       Swal.fire({
         icon: 'success',
         title: 'Revertido',

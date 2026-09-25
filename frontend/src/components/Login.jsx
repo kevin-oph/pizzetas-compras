@@ -1,20 +1,31 @@
 import { useState } from 'react';
 import PropTypes from 'prop-types';
+import api from '../api/client';
 
 export default function Login({ onLoginSuccess }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
-    if ((username === 'admin' && password === '123') || (username === 'operario' && password === '123')) {
-      const role = username === 'admin' ? 'admin' : 'operator';
-      const userData = { username, role };
-      localStorage.setItem('pizzetas_user', JSON.stringify(userData));
-      onLoginSuccess(userData);
-    } else {
-      setError('Usuario o contraseña incorrectos (Prueba admin/123 o operario/123)');
+    setError('');
+    setLoading(true);
+
+    try {
+      const res = await api.post('/api/auth/login', { username, password });
+      const { access_token, user } = res.data;
+      
+      localStorage.setItem('pizzetas_token', access_token);
+      localStorage.setItem('pizzetas_user', JSON.stringify(user));
+      
+      onLoginSuccess(user);
+    } catch (err) {
+      const detail = err.response?.data?.detail || 'Error al conectar con el servidor de autenticación';
+      setError(detail);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -58,9 +69,10 @@ export default function Login({ onLoginSuccess }) {
           </div>
           <button 
             type="submit"
-            className="w-full bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 text-white font-bold py-3.5 rounded-xl shadow-lg transition transform active:scale-95"
+            disabled={loading}
+            className="w-full bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 disabled:opacity-50 text-white font-bold py-3.5 rounded-xl shadow-lg transition transform active:scale-95 cursor-pointer"
           >
-            Iniciar Sesión Segura
+            {loading ? 'Verificando Credenciales...' : 'Iniciar Sesión Segura'}
           </button>
         </form>
 

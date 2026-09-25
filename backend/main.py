@@ -1,27 +1,36 @@
-from fastapi import FastAPI, Depends, HTTPException, status, Query, UploadFile, File, Form
-from sqlalchemy.orm import Session
-from sqlalchemy import func
-from fastapi.middleware.cors import CORSMiddleware
-from typing import List, Dict, Optional, Any
-from pydantic import BaseModel
-from datetime import datetime, timedelta, timezone
+import os
 import io
 import csv
 import openpyxl
+from typing import List, Dict, Optional, Any
+from datetime import datetime, timedelta, timezone
+
+from fastapi import FastAPI, Depends, HTTPException, status, Query, UploadFile, File, Form
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.orm import Session
+from sqlalchemy import func
+from pydantic import BaseModel, Field
+from dotenv import load_dotenv
 
 # Importaciones locales
 import models
+import auth
 from database import engine, get_db
+
+load_dotenv()
 
 # Crea las tablas en la BD si no existen
 models.Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="Pizzetas Artesanales API - Sistema Integral 360°")
+app = FastAPI(title="Pizzetas Artesanales API - Sistema Integral 360°", version="3.1")
 
-# Configuración de CORS
+# Configuración de CORS basada en variables de entorno para producción segura
+cors_origins_str = os.getenv("CORS_ORIGINS", "*")
+origins = [o.strip() for o in cors_origins_str.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins if origins else ["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -43,61 +52,66 @@ def get_stock_status(current: float, ideal: float):
         return "Low"
     return "Optimal"
 
-# --- ESQUEMAS PYDANTIC ---
+# --- ESQUEMAS PYDANTIC CON VALIDACIONES ESTRICTAS ---
+
+class LoginRequest(BaseModel):
+    username: str = Field(..., min_length=1)
+    password: str = Field(..., min_length=1)
+
 class StockConsume(BaseModel):
-    product_id: int
-    consumed_amount: float
+    product_id: int = Field(..., gt=0)
+    consumed_amount: float = Field(..., gt=0, description="La cantidad consumida debe ser estrictamente positiva")
     reason_type: Optional[str] = "MERMA" # MERMA, LIMPIEZA, COMIDA_PERSONAL, OTRO
     shift_notes: Optional[str] = "Salida extraordinaria"
     user_id: Optional[int] = None
 
 class StockUpdate(BaseModel):
-    product_id: int
-    new_stock: float
+    product_id: int = Field(..., gt=0)
+    new_stock: float = Field(..., ge=0, description="El stock resultante no puede ser negativo")
 
 class PurchaseItemIn(BaseModel):
-    product_id: int
-    quantity: float
-    unit_price_paid: float
+    product_id: int = Field(..., gt=0)
+    quantity: float = Field(..., gt=0, description="La cantidad comprada debe ser mayor a 0")
+    unit_price_paid: float = Field(..., ge=0, description="El precio unitario no puede ser negativo")
 
 class PurchaseCreate(BaseModel):
-    provider_id: int
+    provider_id: int = Field(..., gt=0)
     ticket_number: Optional[str] = None
     notes: Optional[str] = None
     user_id: Optional[int] = None
-    items: List[PurchaseItemIn]
+    items: List[PurchaseItemIn] = Field(..., min_items=1, description="Debe incluir al menos un producto")
 
 class ProviderCreate(BaseModel):
-    name: str
+    name: str = Field(..., min_length=1)
 
 class ProductCreate(BaseModel):
-    name: str
+    name: str = Field(..., min_length=1)
     category: str = "Abarrotes y Harinas"
-    provider_id: int
-    ideal_stock: float
-    current_stock: float = 0.0
-    unit_measure: str
-    unit_price: float
+    provider_id: int = Field(..., gt=0)
+    ideal_stock: float = Field(..., ge=0)
+    current_stock: float = Field(default=0.0, ge=0)
+    unit_measure: str = Field(..., min_length=1)
+    unit_price: float = Field(..., ge=0)
 
 class ProductUpdate(BaseModel):
-    name: str
+    name: str = Field(..., min_length=1)
     category: str = "Abarrotes y Harinas"
-    ideal_stock: float
-    unit_measure: str
-    unit_price: float
+    ideal_stock: float = Field(..., ge=0)
+    unit_measure: str = Field(..., min_length=1)
+    unit_price: float = Field(..., ge=0)
     provider_id: Optional[int] = None
 
 class ParseTextRequest(BaseModel):
-    text: str
+    text: str = Field(..., min_length=1)
 
 class RecipeItemIn(BaseModel):
-    product_id: int
-    quantity_needed: float
+    product_id: int = Field(..., gt=0)
+    quantity_needed: float = Field(..., gt=0)
 
 class MenuItemCreate(BaseModel):
-    pos_name: str
+    pos_name: str = Field(..., min_length=1)
     category: str = "COMIDA"
-    sale_price: float = 0.0
+    sale_price: float = Field(default=0.0, ge=0)
     recipes: List[RecipeItemIn] = []
 
 class ConfirmCutItemIn(BaseModel):
@@ -135,6 +149,44 @@ class ConfirmCutRequest(BaseModel):
     ingredients_to_deduct: List[ConfirmCutIngredientIn] = []
     class Config:
         extra = "ignore"
+
+# --- ENDPOINTS DE AUTENTICACIÓN Y SESIÓN ---
+
+@app.post("/api/auth/login")
+def login(payload: LoginRequest, db: Session = Depends(get_db)):
+    """Inicia sesión con credenciales seguras y genera un Token JWT."""
+    user = db.query(models.User).filter(models.User.username == payload.username).first()
+    if not user or not auth.verify_password(payload.password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Usuario o contraseña incorrectos"
+        )
+    
+    # Migración transparente de contraseñas si aún no tenían hash bcrypt
+    if user.hashed_password == payload.password:
+        user.hashed_password = auth.hash_password(payload.password)
+        db.commit()
+
+    token = auth.create_access_token(data={"sub": user.username, "role": user.role, "user_id": user.id})
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "user": {
+            "id": user.id,
+            "username": user.username,
+            "role": user.role
+        }
+    }
+
+@app.get("/api/auth/me")
+def get_current_user_profile(current_user: models.User = Depends(auth.get_current_user)):
+    """Retorna la información del usuario autenticado actual."""
+    return {
+        "id": current_user.id,
+        "username": current_user.username,
+        "role": current_user.role
+    }
+
 
 
 # --- UTILIDADES DE PARSEO DE CORTE POS ---
@@ -357,49 +409,52 @@ def register_purchase(data: PurchaseCreate, db: Session = Depends(get_db)):
     now = datetime.now(timezone.utc)
     total_cost = 0.0
 
-    purchase = models.Purchase(
-        provider_id=provider.id,
-        purchase_date=now,
-        ticket_number=data.ticket_number or f"TICK-{int(now.timestamp())}",
-        total_cost=0.0,
-        notes=data.notes,
-        user_id=data.user_id
-    )
-    db.add(purchase)
-    db.commit()
-    db.refresh(purchase)
-
-    for item in data.items:
-        prod = db.query(models.Product).filter(models.Product.id == item.product_id).first()
-        if not prod:
-            continue
-
-        item_subtotal = round(item.quantity * item.unit_price_paid, 2)
-        total_cost += item_subtotal
-
-        p_item = models.PurchaseItem(
-            purchase_id=purchase.id,
-            product_id=prod.id,
-            quantity=item.quantity,
-            unit_price_paid=item.unit_price_paid,
-            subtotal=item_subtotal
+    try:
+        purchase = models.Purchase(
+            provider_id=provider.id,
+            purchase_date=now,
+            ticket_number=data.ticket_number or f"TICK-{int(now.timestamp())}",
+            total_cost=0.0,
+            notes=data.notes,
+            user_id=data.user_id
         )
-        db.add(p_item)
+        db.add(purchase)
+        db.flush()
 
-        prod.current_stock = (prod.current_stock or 0.0) + item.quantity
-        prod.unit_price = item.unit_price_paid
-        prod.last_purchased_price = item.unit_price_paid
-        prod.last_purchased_date = now
+        for item in data.items:
+            prod = db.query(models.Product).filter(models.Product.id == item.product_id).first()
+            if not prod:
+                continue
 
-    purchase.total_cost = round(total_cost, 2)
+            item_subtotal = round(item.quantity * item.unit_price_paid, 2)
+            total_cost += item_subtotal
 
-    audit = models.AuditLog(
-        user_id=data.user_id,
-        action="REGISTER_PURCHASE",
-        details=f"Compra registrada en {provider.name}. Ticket: {purchase.ticket_number}. Total: ${purchase.total_cost:.2f} ({len(data.items)} insumos)"
-    )
-    db.add(audit)
-    db.commit()
+            p_item = models.PurchaseItem(
+                purchase_id=purchase.id,
+                product_id=prod.id,
+                quantity=item.quantity,
+                unit_price_paid=item.unit_price_paid,
+                subtotal=item_subtotal
+            )
+            db.add(p_item)
+
+            prod.current_stock = (prod.current_stock or 0.0) + item.quantity
+            prod.unit_price = item.unit_price_paid
+            prod.last_purchased_price = item.unit_price_paid
+            prod.last_purchased_date = now
+
+        purchase.total_cost = round(total_cost, 2)
+
+        audit = models.AuditLog(
+            user_id=data.user_id,
+            action="REGISTER_PURCHASE",
+            details=f"Compra registrada en {provider.name}. Ticket: {purchase.ticket_number}. Total: ${purchase.total_cost:.2f} ({len(data.items)} insumos)"
+        )
+        db.add(audit)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error al registrar la compra: {str(e)}")
 
     return {
         "message": f"¡Compra registrada en {provider.name} con éxito!",
@@ -707,65 +762,68 @@ def confirm_sales_cut(data: ConfirmCutRequest, db: Session = Depends(get_db)):
     """Aplica el corte de caja: descuenta almacén, genera bitácoras y guarda histórico financiero."""
     now = datetime.now(timezone.utc)
 
-    # 1. Crear registro SalesCut
-    sales_cut = models.SalesCut(
-        cut_date_str=data.cut_date_str,
-        cut_date=now,
-        total_sales=data.total_sales,
-        cash_sales=data.cash_sales,
-        card_sales=data.card_sales,
-        transfer_sales=data.transfer_sales,
-        tips_cash=data.tips_cash,
-        tips_card=data.tips_card,
-        tips_total=data.tips_total,
-        cash_balance=data.cash_balance,
-        total_items_sold=data.total_items_sold,
-        total_cogs=data.total_cogs,
-        gross_profit=data.gross_profit,
-        food_cost_percentage=data.food_cost_percentage
-    )
-    db.add(sales_cut)
-    db.commit()
-    db.refresh(sales_cut)
-
-    # 2. Guardar partidas de platillos vendidos
-    for item in data.sold_items:
-        s_item = models.SalesCutItem(
-            sales_cut_id=sales_cut.id,
-            product_name=item.name,
-            category=item.category if hasattr(item, 'category') else "GENERAL",
-            quantity=item.quantity,
-            unit_price=item.unit_price,
-            total_amount=item.total_amount,
-            cogs_cost=item.cogs_cost
+    try:
+        # 1. Crear registro SalesCut
+        sales_cut = models.SalesCut(
+            cut_date_str=data.cut_date_str,
+            cut_date=now,
+            total_sales=data.total_sales,
+            cash_sales=data.cash_sales,
+            card_sales=data.card_sales,
+            transfer_sales=data.transfer_sales,
+            tips_cash=data.tips_cash,
+            tips_card=data.tips_card,
+            tips_total=data.tips_total,
+            cash_balance=data.cash_balance,
+            total_items_sold=data.total_items_sold,
+            total_cogs=data.total_cogs,
+            gross_profit=data.gross_profit,
+            food_cost_percentage=data.food_cost_percentage
         )
-        db.add(s_item)
+        db.add(sales_cut)
+        db.flush()
 
-    # 3. Descontar insumos del almacén y registrar bitácora de consumo
-    for ing in data.ingredients_to_deduct:
-        prod = db.query(models.Product).filter(models.Product.id == ing.product_id).first()
-        if prod:
-            current_s = prod.current_stock or 0.0
-            new_s = max(0.0, round(current_s - ing.quantity_to_deduct, 3))
-            prod.current_stock = new_s
-
-            clog = models.ConsumptionLog(
-                product_id=prod.id,
-                quantity=ing.quantity_to_deduct,
-                unit_price_at_moment=prod.unit_price or 0.0,
-                total_cost=ing.cost,
-                timestamp=now,
-                reason_type="VENTA_POS",
-                shift_notes=f"Corte POS: {data.cut_date_str}"
+        # 2. Guardar partidas de platillos vendidos
+        for item in data.sold_items:
+            s_item = models.SalesCutItem(
+                sales_cut_id=sales_cut.id,
+                product_name=item.name,
+                category=item.category if hasattr(item, 'category') else "GENERAL",
+                quantity=item.quantity,
+                unit_price=item.unit_price,
+                total_amount=item.total_amount,
+                cogs_cost=item.cogs_cost
             )
-            db.add(clog)
+            db.add(s_item)
 
-    audit = models.AuditLog(
-        action="APPLY_POS_CUT",
-        details=f"Corte POS aplicado: Ventas ${data.total_sales:.2f}, Costo Insumos ${data.total_cogs:.2f} ({data.food_cost_percentage}% Food Cost). Insumos descontados: {len(data.ingredients_to_deduct)}"
-    )
-    db.add(audit)
-    db.commit()
+        # 3. Descontar insumos del almacén y registrar bitácora de consumo
+        for ing in data.ingredients_to_deduct:
+            prod = db.query(models.Product).filter(models.Product.id == ing.product_id).first()
+            if prod:
+                current_s = prod.current_stock or 0.0
+                new_s = max(0.0, round(current_s - ing.quantity_to_deduct, 3))
+                prod.current_stock = new_s
+
+                clog = models.ConsumptionLog(
+                    product_id=prod.id,
+                    quantity=ing.quantity_to_deduct,
+                    unit_price_at_moment=prod.unit_price or 0.0,
+                    total_cost=ing.cost,
+                    timestamp=now,
+                    reason_type="VENTA_POS",
+                    shift_notes=f"Corte POS: {data.cut_date_str}"
+                )
+                db.add(clog)
+
+        audit = models.AuditLog(
+            action="APPLY_POS_CUT",
+            details=f"Corte POS aplicado: Ventas ${data.total_sales:.2f}, Costo Insumos ${data.total_cogs:.2f} ({data.food_cost_percentage}% Food Cost). Insumos descontados: {len(data.ingredients_to_deduct)}"
+        )
+        db.add(audit)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error al aplicar el corte de ventas: {str(e)}")
 
     return {
         "message": "¡Corte de ventas procesado y almacén descontado con éxito!",

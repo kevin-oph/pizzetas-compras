@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../api/client';
 import { 
   DollarSign, 
   ShoppingCart, 
@@ -54,7 +54,7 @@ export default function Dashboard() {
   const fetchMetrics = async () => {
     setLoading(true);
     try {
-      const res = await axios.get(`/api/dashboard-metrics?days=${days}`);
+      const res = await api.get(`/api/dashboard-metrics?days=${days}`);
       setData(res.data);
     } catch (err) {
       console.error("Error al cargar métricas:", err);

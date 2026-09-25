@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import axios from 'axios';
+import api from '../api/client';
 import Swal from 'sweetalert2';
 import { 
   Upload, 
@@ -40,7 +40,7 @@ export default function PosCutUploader() {
           setParsing(false);
           return;
         }
-        res = await axios.post('/api/sales-cut/parse-text', { text: rawText });
+        res = await api.post('/api/sales-cut/parse-text', { text: rawText });
       } else {
         if (!file) {
           Swal.fire('Atención', 'Selecciona un archivo Excel (.xlsx, .xls) o CSV.', 'warning');
@@ -49,7 +49,7 @@ export default function PosCutUploader() {
         }
         const formData = new FormData();
         formData.append('file', file);
-        res = await axios.post('/api/sales-cut/upload-file', formData, {
+        res = await api.post('/api/sales-cut/upload-file', formData, {
           headers: { 'Content-Type': 'multipart/form-data' }
         });
       }
@@ -126,7 +126,7 @@ export default function PosCutUploader() {
         }))
       };
 
-      const res = await axios.post('/api/sales-cut/confirm', payload);
+      const res = await api.post('/api/sales-cut/confirm', payload);
       Swal.fire({
         icon: 'success',
         title: '¡Corte Aplicado al 100%!',

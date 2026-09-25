@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../api/client';
 import Swal from 'sweetalert2';
 import { Search, Flame, RefreshCw, AlertCircle, CheckCircle2 } from 'lucide-react';
 
@@ -29,7 +29,7 @@ export default function ProductInventory() {
   const fetchCatalog = async () => {
     setLoading(true);
     try {
-      const response = await axios.get('/api/inventory-catalog');
+      const response = await api.get('/api/inventory-catalog');
       setCatalog(response.data || {});
     } catch (err) {
       console.error("Error al cargar inventario:", err);
@@ -82,7 +82,7 @@ export default function ProductInventory() {
     }
 
     try {
-      const res = await axios.post('/api/consume-stock', {
+      const res = await api.post('/api/consume-stock', {
         product_id: productId,
         consumed_amount: consumed,
         shift_notes: shiftNote
